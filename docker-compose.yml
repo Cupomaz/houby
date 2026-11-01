@@ -1,0 +1,25 @@
+services:
+  houby:
+    build: .
+    container_name: houby
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=5000
+      - FLASK_DEBUG=true
+    # Persist generated GeoJSONs + WMTS tile cache across restarts.
+    # The build step downloads tiles from Lesy ČR over the internet, so the
+    # first request may be slow while tiles are fetched.
+    volumes:
+      - houby_data:/app/data
+    networks:
+      - houby_net
+
+networks:
+  houby_net:
+    driver: bridge
+
+volumes:
+  houby_data:
+    driver: local
