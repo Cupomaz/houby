@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py build.py ./
+COPY app.py build.py config.py classify.py tiles.py pipeline.py ./
 COPY static ./static
 COPY probability.png ./
 
