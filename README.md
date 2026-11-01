@@ -56,3 +56,57 @@ Aplikace obsahuje predikční algoritmus běžící na backendu, který kombinuj
 ## 6. Přínos projektu
 
 Projekt prokazuje schopnost pracovat s otevřenými datovými sadami (Open Data), propojovat heterogenní API (meteorologie + geografie) a prezentovat komplexní data v uživatelsky přívětivé webové formě. Má reálné využití a kombinuje vývoj webových aplikací s praktickou biologií a geografií.
+
+## 7. Spuštění aplikace
+
+### Požadavky
+Python 3.10+ a nainstalované systémové knihovny GDAL a PROJ (vyžaduje `rasterio`).
+
+### Instalace
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Sestavení dat (jednorázově, nebo při aktualizaci mapy hub)
+
+Skript `build.py` stáhne dlaždice lesního stáří z WMTS služby Lesů ČR, přečte mapu pravděpodobnosti hub (`probability.png`, případně z API ČHMÚ), provede průnik a vygeneruje GeoJSON soubory pro každou věkovou třídu lesa.
+
+```bash
+python build.py
+```
+
+Výsledky se ukládají do adresáře `data/` (GeoJSON + `meta.json`). Dlaždice WMTS se cacheují do `data/cache/`, takže opakované sestavení je rychlejší.
+
+### Spuštění webové aplikace
+
+```bash
+python app.py
+```
+
+Aplikace poběží na `http://127.0.0.1:5000/`.
+
+### Ovládání v prohlížeči
+
+* V nabídce vlevo vyberte věkovou třídu lesa (např. "61-80 let"). Zobrazí se pouze plochy, kde současně platí nejvyšší nebo druhý nejvyšší výskyt hub.
+* Posuvník "Průhlednost vrstvy" mění neprůhlednost zobrazené vrstvy.
+* Kliknutím na plochu zobrazíte informační okno s věkovou třídou a třídou pravděpodobnosti hub.
+* Barvy: tmavě zelená = nejvyšší pravděpodobnost (třída 4), světle zelená = druhá nejvyšší (třída 3).
+
+### Opětovné sestavení při aktualizaci dat
+
+Mapa pravděpodobnosti hub se aktualizuje denně. Pro opnieuw sestavení dat spusťte:
+
+```bash
+python build.py
+```
+
+nebo přes HTTP endpoint (běží-li aplikace):
+
+```bash
+curl -X POST http://127.0.0.1:5000/api/rebuild
+```
+
+Stav sestavení lze zjistit na `http://127.0.0.1:5000/api/status`.

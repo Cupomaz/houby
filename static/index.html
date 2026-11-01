@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Houby × Lesní vĕk — ČR</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div id="map"></div>
+
+<nav class="panel">
+  <h3>Lesní vĕk (průnik s nejvyšším/2. nejvyšším výskytem hub)</h3>
+  <p id="meta"></p>
+  <div id="status" class="hint">Načítejte data…</div>
+  <form id="ageForm" class="age-menu">
+  </form>
+  <div class="opacity">
+    <label>Průhlednost vrstvy <span id="opVal">100</span>%</label>
+    <input type="range" id="opSlider" min="0" max="100" value="100" />
+  </div>
+  <div class="legend">
+    <div><strong>Legenda (pravdĕpodobnost hub):</strong></div>
+    <div><span class="swatch" style="background:#219b51"></span> nejvyšší (třída 4)</div>
+    <div><span class="swatch" style="background:#86cb66"></span> 2. nejvyšší (třída 3)</div>
+  </div>
+  <p class="hint">Vyberte vĕkovou třídu lesa v menu. Zobrazeny jsou pouze plochy, kde souběžnĕ platí nejvyšší/2. nejvyšší výskyt hub.</p>
+</nav>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

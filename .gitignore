@@ -1,4 +1,35 @@
-__pycache__
-img
-coverage_map.png
-.venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+var/
+sdist/
+dist-info/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Generated data (rebuilt by build.py)
+data/
+*.npy
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
