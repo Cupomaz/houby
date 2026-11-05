@@ -90,14 +90,14 @@ Aplikace poběží na `http://127.0.0.1:5000/`.
 
 ### Spuštění přes Docker (GHCR)
 
-Sestavený obraz je automaticky publikován do [GitHub Container Registry](https://ghcr.io) při každém pushi do větve `main` a při každém tagu (`v*`). Obraz si můžete stáhnout a spustit příkazem:
+Sestavený obraz je automaticky publikován do [GitHub Container Registry](https://ghcr.io). Image si můžete stáhnout a spustit příkazem:
 
 ```bash
-docker pull ghcr.io/<owner>/houby:latest
-docker run -p 5000:5000 -v houby_data:/app/data ghcr.io/<owner>/houby:latest
+docker pull ghcr.io/cupomaz/houby:latest
+docker run -p 5000:5000 -v houby_data:/app/data ghcr.io/cupomaz/houby:latest
 ```
 
-Nahraďte `<owner>` názvem vašeho GitHub uživatele nebo organizace. Svazek `houby_data:/app/data` zajistí, že vygenerované GeoJSON soubory a mezipaměť dlaždic přetrvají i po restartu kontejneru.
+Volume `houby_data:/app/data` zajistí, že vygenerované GeoJSON soubory a mezipaměť dlaždic přetrvají i po restartu kontejneru.
 
 Aplikace poběží na `http://127.0.0.1:5000/`.
 
