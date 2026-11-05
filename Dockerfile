@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
+ARG REPOSITORY=unknown
 FROM python:3.12-slim
+
+LABEL org.opencontainers.image.source=${REPOSITORY}
 
 # System dependencies required by rasterio / pyproj / shapely (GDAL, PROJ, GEOS)
 RUN apt-get update && apt-get install -y --no-install-recommends \
