@@ -140,7 +140,7 @@ def run_build():
 
         # 4. Process cached tiles directly, download missing ones concurrently
         dst = np.full((mh, mw), NODATA, dtype=np.uint8)
-        done = 0
+        processed = 0
         applied = 0
         blanked = 0
         cached_count = 0
@@ -155,9 +155,9 @@ def run_build():
             else:
                 to_download.append((c, r))
                 res2 = None
-            done += 1
-            if done % 2000 == 0:
-                _set_status(progress=5 + int(90 * done / ntiles))
+            processed += 1
+            if processed % 2000 == 0:
+                _set_status(progress=5 + int(90 * processed / ntiles))
             if res2 is None:
                 continue
             if res2 == "blank":
@@ -180,17 +180,17 @@ def run_build():
                 for fut in as_completed(futs):
                     res2 = fut.result()
                     ddone += 1
-                    done += 1
+                    processed += 1
                     if res2 is None:
                         if ddone % 500 == 0:
                             log.info("downloaded %d/%d tiles", ddone, ndown)
-                        _set_status(progress=5 + int(90 * done / ntiles))
+                        _set_status(progress=5 + int(90 * processed / ntiles))
                         continue
                     if res2 == "blank":
                         blanked += 1
                         if ddone % 500 == 0:
                             log.info("downloaded %d/%d tiles (%d blank)", ddone, ndown, blanked)
-                        _set_status(progress=5 + int(90 * done / ntiles))
+                        _set_status(progress=5 + int(90 * processed / ntiles))
                         continue
                     rows, cols, ages = res2
                     dst[rows, cols] = ages
@@ -198,11 +198,12 @@ def run_build():
                     if ddone % 500 == 0:
                         log.info("downloaded %d/%d tiles, assigned %d mushroom px (%d blank)",
                                  ddone, ndown, applied, blanked)
-                    _set_status(progress=5 + int(90 * done / ntiles))
+                    _set_status(progress=5 + int(90 * processed / ntiles))
         log.info("forest age assigned to %d mushroom pixels, %d blank tiles skipped, %d from cache",
                  applied, blanked, cached_count)
 
         # 5. Per forest age: polygonize intersection
+        _set_status(message="polygonizing forest ages", progress=95)
         ages_meta = []
         for a in range(8):
             mask = (dst == a) & mush_high
