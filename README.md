@@ -88,6 +88,19 @@ python app.py
 
 Aplikace poběží na `http://127.0.0.1:5000/`.
 
+### Spuštění přes Docker (GHCR)
+
+Sestavený obraz je automaticky publikován do [GitHub Container Registry](https://ghcr.io). Image si můžete stáhnout a spustit příkazem:
+
+```bash
+docker pull ghcr.io/cupomaz/houby:latest
+docker run -p 5000:5000 -v houby_data:/app/data ghcr.io/cupomaz/houby:latest
+```
+
+Volume `houby_data:/app/data` zajistí, že vygenerované GeoJSON soubory a mezipaměť dlaždic přetrvají i po restartu kontejneru.
+
+Aplikace poběží na `http://127.0.0.1:5000/`.
+
 ### Ovládání v prohlížeči
 
 * V nabídce vlevo vyberte věkovou třídu lesa (např. "61-80 let"). Zobrazí se pouze plochy, kde současně platí nejvyšší nebo druhý nejvyšší výskyt hub.
