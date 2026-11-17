@@ -43,6 +43,7 @@ def download_tile_with_retries(col, row, max_retries=3):
     if os.path.exists(cache_path):
         try:
             arr = np.asarray(Image.open(cache_path).convert("RGB"))
+            log.info("cache hit: %d_%d (png)", col, row)
             return arr, col, row
         except Exception:
             os.remove(cache_path)  # corrupt cache file, re-download
@@ -66,9 +67,11 @@ def download_tile_with_retries(col, row, max_retries=3):
                     np.save(cache_path.replace(".png", ".npy"), age_arr)
                 except Exception:
                     pass
+                log.info("downloaded: %d_%d", col, row)
                 return arr, col, row
         except Exception:
             pass
+    log.warning("download failed: %d_%d after %d retries", col, row, max_retries)
     return None, col, row
 
 
@@ -82,12 +85,14 @@ def load_cached_tile(col, row):
     if os.path.exists(npy_path):
         try:
             arr = np.load(npy_path)
+            log.info("cache hit: %d_%d (npy)", col, row)
             return arr, col, row
         except Exception:
             os.remove(npy_path)
     # Fallback: raw PNG cache (from older builds). Classify and promote to .npy.
     png_path = os.path.join(TILE_CACHE_DIR, f"{col}_{row}.png")
     if not os.path.exists(png_path):
+        log.info("cache miss: %d_%d", col, row)
         return None
     try:
         img = Image.open(png_path).convert("RGB")

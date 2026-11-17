@@ -45,6 +45,9 @@ BUILD_STATUS = {
     "message": "",
     "progress": 0,          # 0-100
     "ages": [],
+    "cached": 0,            # tiles served from local cache
+    "downloading": 0,       # tiles still to download from WMTS
+    "ntiles": 0,            # total tiles needed for this run
 }
 
 
@@ -107,6 +110,9 @@ def run_build():
         mush_high = np.isin(mush_class, list(MUSH_HIGH_CLASSES))
         log.info("mushroom map %dx%d px; high-prob (class 3/4) px: %d",
                  mw, mh, int(mush_high.sum()))
+        log.info("tile cache dir: %s (%d files present)",
+                 TILE_CACHE_DIR, len([f for f in os.listdir(TILE_CACHE_DIR)
+                                      if f.endswith(".npy")]) if os.path.exists(TILE_CACHE_DIR) else 0)
 
         xres = (MUSH_EAST - MUSH_WEST) / mw
         yres = (MUSH_NORTH - MUSH_SOUTH) / mh
@@ -136,7 +142,8 @@ def run_build():
         ntiles = len(tiles)
         log.info("need %d matrix-9 forest tiles (cols[%d,%d] rows[%d,%d])",
                  ntiles, c0, c1, r0, r1)
-        _set_status(message=f"downloading {ntiles} tiles", progress=5)
+        _set_status(message=f"planning {ntiles} tiles", progress=5,
+                    ntiles=ntiles, cached=0, downloading=0)
 
         # 4. Process cached tiles directly, download missing ones concurrently
         dst = np.full((mh, mw), NODATA, dtype=np.uint8)
@@ -168,7 +175,8 @@ def run_build():
             applied += len(rows)
 
         log.info("cached tiles: %d, need to download: %d", cached_count, len(to_download))
-        _set_status(message=f"cached {cached_count}, downloading {len(to_download)} tiles", progress=5)
+        _set_status(message=f"cached {cached_count}, downloading {len(to_download)} of {ntiles} tiles", progress=5,
+                    ntiles=ntiles, cached=cached_count, downloading=len(to_download))
 
         # Download missing tiles concurrently (fewer workers to avoid overwhelming server)
         if to_download:
@@ -178,16 +186,19 @@ def run_build():
                 futs = {ex.submit(process_tile, c, r, mx, my, mush_high): (c, r)
                         for (c, r) in to_download}
                 for fut in as_completed(futs):
+                    (c, r) = futs[fut]
                     res2 = fut.result()
                     ddone += 1
                     processed += 1
                     if res2 is None:
+                        log.info("tile %d_%d: download failed / no data", c, r)
                         if ddone % 500 == 0:
                             log.info("downloaded %d/%d tiles", ddone, ndown)
                         _set_status(progress=5 + int(90 * processed / ntiles))
                         continue
                     if res2 == "blank":
                         blanked += 1
+                        log.info("tile %d_%d: blank (skipped)", c, r)
                         if ddone % 500 == 0:
                             log.info("downloaded %d/%d tiles (%d blank)", ddone, ndown, blanked)
                         _set_status(progress=5 + int(90 * processed / ntiles))
@@ -195,6 +206,7 @@ def run_build():
                     rows, cols, ages = res2
                     dst[rows, cols] = ages
                     applied += len(rows)
+                    log.info("tile %d_%d: assigned %d mushroom px", c, r, len(rows))
                     if ddone % 500 == 0:
                         log.info("downloaded %d/%d tiles, assigned %d mushroom px (%d blank)",
                                  ddone, ndown, applied, blanked)
