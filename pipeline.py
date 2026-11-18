@@ -153,26 +153,44 @@ def run_build():
         cached_count = 0
         to_download = []
 
-        # Process cached tiles first (instant, no network)
-        for (c, r) in tiles:
-            cached = load_cached_tile(c, r)
-            if cached is not None:
-                res2 = process_tile_from_array(cached[0], c, r, mx, my, mush_high)
-                cached_count += 1
-            else:
-                to_download.append((c, r))
-                res2 = None
-            processed += 1
-            if processed % 2000 == 0:
-                _set_status(progress=5 + int(90 * processed / ntiles))
-            if res2 is None:
-                continue
-            if res2 == "blank":
-                blanked += 1
-                continue
-            rows, cols, ages = res2
-            dst[rows, cols] = ages
-            applied += len(rows)
+        # Snapshot of what is already on disk so each cached-tile load avoids a
+        # per-file stat() syscall (Option B).
+        cache_files = set()
+        if os.path.isdir(TILE_CACHE_DIR):
+            cache_files = {f for f in os.listdir(TILE_CACHE_DIR) if f.endswith(".npy")}
+
+        def _load_and_process_cached(c, r):
+            """Load one cached tile and classify it; return (res2, was_cached)."""
+            cached = load_cached_tile(c, r, cache_files)
+            if cached is None:
+                return None, False
+            age_arr, _, _ = cached
+            return process_tile_from_array(age_arr, c, r, mx, my, mush_high), True
+
+        # Process cached tiles concurrently (instant, no network) (Option A).
+        max_workers = min(32, (os.cpu_count() or 4) + 4)
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futs = {
+                ex.submit(_load_and_process_cached, c, r): (c, r) for (c, r) in tiles
+            }
+            for fut in as_completed(futs):
+                (c, r) = futs[fut]
+                res2, was_cached = fut.result()
+                processed += 1
+                if processed % 2000 == 0:
+                    _set_status(progress=5 + int(90 * processed / ntiles))
+                if was_cached:
+                    cached_count += 1
+                if res2 is None:
+                    if not was_cached:
+                        to_download.append((c, r))
+                    continue
+                if res2 == "blank":
+                    blanked += 1
+                    continue
+                rows, cols, ages = res2
+                dst[rows, cols] = ages
+                applied += len(rows)
 
         log.info("cached tiles: %d, need to download: %d", cached_count, len(to_download))
         _set_status(message=f"cached {cached_count}, downloading {len(to_download)} of {ntiles} tiles", progress=5,
