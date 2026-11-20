@@ -262,6 +262,8 @@ def run_build():
             tr_arr = np.concatenate([c[3] for c in chunks])
 
             cached = load_cached_tile(tile_c, tile_r, cache_files)
+            age_arr = None
+            was_cached = False
             if cached is not None:
                 age_arr = cached[0]
                 was_cached = True
