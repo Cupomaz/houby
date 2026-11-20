@@ -336,6 +336,8 @@ def run_build():
                 _set_status(progress=5 + int(90 * processed / ntiles))
 
         # Free all grouped pixel data now that tiles are processed.
+        missing_count = len(tile_keys) - cached_count - downloaded_count - blanked
+        downloading_count = len(download_keys)
         tile_pixel_chunks.clear()
         del tile_pixel_chunks
         del tile_keys, cached_keys, download_keys
@@ -346,7 +348,7 @@ def run_build():
             "blank: %d, mushroom px assigned: %d",
             cached_count,
             downloaded_count,
-            len(tile_keys) - cached_count - downloaded_count - blanked,
+            missing_count,
             blanked,
             applied,
         )
@@ -355,7 +357,7 @@ def run_build():
             progress=5,
             ntiles=ntiles,
             cached=cached_count,
-            downloading=len(download_keys),
+            downloading=downloading_count,
         )
 
         # 5. Per forest age: polygonize intersection
