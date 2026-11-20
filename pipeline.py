@@ -84,6 +84,7 @@ def run_build():
         mx5514, my5514 = tr.transform(lons.ravel(), lats.ravel())
         mx = mx5514.reshape(mh, mw)
         my = my5514.reshape(mh, mw)
+        del lons, lats, js, is_, mx5514, my5514
 
         # 3. Tile set intersecting the mushroom class-3/4 extent, clamped to valid limits
         high_ys, high_xs = np.nonzero(mush_high)
@@ -122,73 +123,107 @@ def run_build():
             cache_files = {f for f in os.listdir(TILE_CACHE_DIR) if f.endswith(".npy")}
 
         # --- Per-pixel tile assignment (computed once for all mushrooms) ---
+        #
+        # Row-chunked to avoid allocating full-grid int64 coordinate arrays.
+        # Groups pixels into a dict keyed by tile, avoiding multiple
+        # full-length sorted index arrays. Full mx/my grids are freed right
+        # after this section, before the memory-heavy download phase.
         TILE_PX = 256  # matrix-9 tile side in pixels
-        mx_flat = mx.ravel()
-        my_flat = my.ravel()
-        high_flat = mush_high.ravel()
+        TILE_KEY_STRIDE = 4096  # > max tile column (VALID_C1)
 
-        gx = np.floor((mx_flat - TL_X) / MATRIX_9_RES).astype(np.int64)
-        gy = np.floor((TL_Y - my_flat) / MATRIX_9_RES).astype(np.int64)
+        # tile_pixel_chunks: tile_key -> list of (mush_r, mush_c, tc, tr) arrays
+        tile_pixel_chunks: dict[int, list[tuple[np.ndarray, ...]]] = {}
 
-        # Restrict to pixels inside the valid WMTS extent before dividing into
-        # per-tile coordinates, keeping full-size arrays short-lived.
-        in_extent = (
-            high_flat
-            & (gx >= VALID_C0 * TILE_PX)
-            & (gx <= (VALID_C1 + 1) * TILE_PX - 1)
-            & (gy >= VALID_R0 * TILE_PX)
-            & (gy <= (VALID_R1 + 1) * TILE_PX - 1)
-        )
-        pix_idx = np.nonzero(in_extent)[0]
-        del in_extent, high_flat
+        chunk_rows = 512
+        for r0_chunk in range(0, mh, chunk_rows):
+            r1_chunk = min(r0_chunk + chunk_rows, mh)
 
-        gx_v = gx[pix_idx]
-        gy_v = gy[pix_idx]
-        del gx, gy
+            mx_chunk = mx[r0_chunk:r1_chunk, :]
+            my_chunk = my[r0_chunk:r1_chunk, :]
+            high_chunk = mush_high[r0_chunk:r1_chunk, :]
 
-        tile_c_v = gx_v // TILE_PX
-        tc_v = gx_v % TILE_PX
-        tile_r_v = gy_v // TILE_PX
-        tr_v = gy_v % TILE_PX
-        del gx_v, gy_v
+            gx_chunk = np.floor((mx_chunk - TL_X) / MATRIX_9_RES).astype(np.int32)
+            gy_chunk = np.floor((TL_Y - my_chunk) / MATRIX_9_RES).astype(np.int32)
 
-        in_tile = (
-            (tile_c_v >= VALID_C0) & (tile_c_v <= VALID_C1)
-            & (tile_r_v >= VALID_R0) & (tile_r_v <= VALID_R1)
-        )
-        pix_idx = pix_idx[in_tile]
-        tile_c_v = tile_c_v[in_tile]
-        tc_v = tc_v[in_tile]
-        tile_r_v = tile_r_v[in_tile]
-        tr_v = tr_v[in_tile]
-        del in_tile
+            in_extent = (
+                high_chunk
+                & (gx_chunk >= VALID_C0 * TILE_PX)
+                & (gx_chunk <= (VALID_C1 + 1) * TILE_PX - 1)
+                & (gy_chunk >= VALID_R0 * TILE_PX)
+                & (gy_chunk <= (VALID_R1 + 1) * TILE_PX - 1)
+            )
+            rows_c, cols_c = np.nonzero(in_extent)
+            del in_extent, high_chunk
 
-        mush_r_v = (pix_idx // mw).astype(np.int64)
-        mush_c_v = (pix_idx % mw).astype(np.int64)
+            if len(rows_c) == 0:
+                del mx_chunk, my_chunk, gx_chunk, gy_chunk, rows_c, cols_c
+                continue
 
-        # --- Group pixels by tile ---
-        key = tile_r_v.astype(np.int64) * 4096 + tile_c_v.astype(np.int64)
-        _, inverse = np.unique(key, return_inverse=True)
-        sort_idx = np.argsort(inverse, kind="stable")
-        inverse_sorted = inverse[sort_idx]
-        pix_sorted = pix_idx[sort_idx]
-        tile_r_sorted = tile_r_v[sort_idx]
-        tile_c_sorted = tile_c_v[sort_idx]
-        tc_sorted = tc_v[sort_idx]
-        tr_sorted = tr_v[sort_idx]
-        mush_r_sorted = mush_r_v[sort_idx]
-        mush_c_sorted = mush_c_v[sort_idx]
+            mush_r_v = (rows_c + r0_chunk).astype(np.int64)
+            mush_c_v = cols_c.astype(np.int64)
+            gx_v = gx_chunk[rows_c, cols_c]
+            gy_v = gy_chunk[rows_c, cols_c]
 
-        bounds = np.nonzero(np.diff(inverse_sorted) != 0)[0] + 1
-        starts = np.concatenate(([0], bounds))
-        ends = np.concatenate((bounds, [len(pix_sorted)]))
+            tile_c_v = gx_v // TILE_PX
+            tc_v = gx_v % TILE_PX
+            tile_r_v = gy_v // TILE_PX
+            tr_v = gy_v % TILE_PX
 
-        tile_tasks = []  # (col, row, start, end)
-        for s, e in zip(starts, ends):
-            if s < e:
-                tile_tasks.append(
-                    (int(tile_c_sorted[s]), int(tile_r_sorted[s]), int(s), int(e))
-                )
+            in_tile = (
+                (tile_c_v >= VALID_C0) & (tile_c_v <= VALID_C1)
+                & (tile_r_v >= VALID_R0) & (tile_r_v <= VALID_R1)
+            )
+            if not np.any(in_tile):
+                del mx_chunk, my_chunk, gx_chunk, gy_chunk
+                del mush_r_v, mush_c_v, gx_v, gy_v
+                del tile_c_v, tc_v, tile_r_v, tr_v, in_tile
+                continue
+
+            mush_r_v = mush_r_v[in_tile]
+            mush_c_v = mush_c_v[in_tile]
+            tile_c_v = tile_c_v[in_tile]
+            tc_v = tc_v[in_tile]
+            tile_r_v = tile_r_v[in_tile]
+            tr_v = tr_v[in_tile]
+            del in_tile
+
+            # Vectorized grouping within this chunk by tile key.
+            keys = tile_r_v.astype(np.int32) * TILE_KEY_STRIDE + tile_c_v.astype(np.int32)
+            sort_idx = np.argsort(keys, kind="stable")
+            keys_sorted = keys[sort_idx]
+            bounds = np.nonzero(np.diff(keys_sorted) != 0)[0] + 1
+            starts = np.concatenate(([0], bounds))
+            ends = np.concatenate((bounds, [len(keys_sorted)]))
+
+            for s, e in zip(starts, ends):
+                key = int(keys_sorted[s])
+                if key not in tile_pixel_chunks:
+                    tile_pixel_chunks[key] = []
+                tile_pixel_chunks[key].append((
+                    mush_r_v[sort_idx[s:e]],
+                    mush_c_v[sort_idx[s:e]],
+                    tc_v[sort_idx[s:e]],
+                    tr_v[sort_idx[s:e]],
+                ))
+
+            del mx_chunk, my_chunk, gx_chunk, gy_chunk
+            del mush_r_v, mush_c_v, gx_v, gy_v
+            del tile_c_v, tc_v, tile_r_v, tr_v
+            del keys, sort_idx, keys_sorted, bounds, starts, ends
+
+        # Full grids no longer needed after tile assignment.
+        del mx, my
+
+        # --- Build tile tasks from grouped pixels ---
+        tile_tasks = []  # (col, row, mush_r_arr, mush_c_arr, tc_arr, tr_arr)
+        for key, chunks in tile_pixel_chunks.items():
+            tile_r = key // TILE_KEY_STRIDE
+            tile_c = key % TILE_KEY_STRIDE
+            mush_r_arr = np.concatenate([c[0] for c in chunks])
+            mush_c_arr = np.concatenate([c[1] for c in chunks])
+            tc_arr = np.concatenate([c[2] for c in chunks])
+            tr_arr = np.concatenate([c[3] for c in chunks])
+            tile_tasks.append((tile_c, tile_r, mush_r_arr, mush_c_arr, tc_arr, tr_arr))
 
         log.info(
             "%d of %d planned tiles contain high-probability mushroom pixels",
@@ -214,11 +249,11 @@ def run_build():
                 return p, a, b, c, d
             with ThreadPoolExecutor(max_workers=max_workers) as ex:
                 futs = {
-                    ex.submit(_load_tile_age, cc, rr): (cc, rr, ss, ee)
-                    for (cc, rr, ss, ee) in tasks
+                    ex.submit(_load_tile_age, cc, rr): (cc, rr, mr, mc, tc, tr)
+                    for (cc, rr, mr, mc, tc, tr) in tasks
                 }
                 for fut in as_completed(futs):
-                    cc, rr, ss, ee = futs[fut]
+                    cc, rr, mr, mc, tc, tr = futs[fut]
                     age_arr, was_cached = fut.result()
                     p += 1
                     if p % 2000 == 0:
@@ -234,8 +269,8 @@ def run_build():
                     if is_blank_rgb(age_arr):
                         b += 1
                         continue
-                    ages = age_arr[tr_sorted[ss:ee], tc_sorted[ss:ee]]
-                    dst[mush_r_sorted[ss:ee], mush_c_sorted[ss:ee]] = ages
+                    ages = age_arr[tr, tc]
+                    dst[mr, mc] = ages
                     a += len(ages)
             return p, a, b, c, d
 
