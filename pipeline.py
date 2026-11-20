@@ -276,8 +276,9 @@ def run_build():
                 was_cached = False
 
             if age_arr is None or is_blank_rgb(age_arr):
+                blanked = 1 if age_arr is not None else 0
                 del mush_r_arr, mush_c_arr, tc_arr, tr_arr, chunks, age_arr
-                return was_cached, 0, 1 if age_arr is not None else 0
+                return was_cached, 0, blanked
 
             ages = age_arr[tr_arr, tc_arr]
             dst[mush_r_arr, mush_c_arr] = ages
