@@ -12,6 +12,7 @@ Pipeline:
 Run directly:  python build.py
 Or import run_build() from another process (e.g. Flask).
 """
+import gc
 import json
 import math
 import os
@@ -65,6 +66,7 @@ def run_build():
         mw, mh = mush_img.size
         mush_arr = np.asarray(mush_img)
         mush_class = nearest_class(mush_arr, MUSH_COLORS)
+        del mush_arr  # no longer needed after classification
         mush_high = np.isin(mush_class, list(MUSH_HIGH_CLASSES))
         log.info("mushroom map %dx%d px; high-prob (class 3/4) px: %d",
                  mw, mh, int(mush_high.sum()))
@@ -84,6 +86,7 @@ def run_build():
         mx5514, my5514 = tr.transform(lons.ravel(), lats.ravel())
         mx = mx5514.reshape(mh, mw)
         my = my5514.reshape(mh, mw)
+        del lons, lats, js, is_, mx5514, my5514
 
         # 3. Tile set intersecting the mushroom class-3/4 extent, clamped to valid limits
         high_ys, high_xs = np.nonzero(mush_high)
@@ -122,147 +125,230 @@ def run_build():
             cache_files = {f for f in os.listdir(TILE_CACHE_DIR) if f.endswith(".npy")}
 
         # --- Per-pixel tile assignment (computed once for all mushrooms) ---
+        #
+        # Row-chunked to avoid allocating full-grid int64 coordinate arrays.
+        # Groups pixels into a dict keyed by tile, avoiding multiple
+        # full-length sorted index arrays. Full mx/my grids are freed right
+        # after this section, before the memory-heavy download phase.
         TILE_PX = 256  # matrix-9 tile side in pixels
-        mx_flat = mx.ravel()
-        my_flat = my.ravel()
-        high_flat = mush_high.ravel()
+        TILE_KEY_STRIDE = 4096  # > max tile column (VALID_C1)
 
-        gx = np.floor((mx_flat - TL_X) / MATRIX_9_RES).astype(np.int64)
-        gy = np.floor((TL_Y - my_flat) / MATRIX_9_RES).astype(np.int64)
+        # tile_pixel_chunks: tile_key -> list of (mush_r, mush_c, tc, tr) arrays
+        tile_pixel_chunks: dict[int, list[tuple[np.ndarray, ...]]] = {}
 
-        # Restrict to pixels inside the valid WMTS extent before dividing into
-        # per-tile coordinates, keeping full-size arrays short-lived.
-        in_extent = (
-            high_flat
-            & (gx >= VALID_C0 * TILE_PX)
-            & (gx <= (VALID_C1 + 1) * TILE_PX - 1)
-            & (gy >= VALID_R0 * TILE_PX)
-            & (gy <= (VALID_R1 + 1) * TILE_PX - 1)
-        )
-        pix_idx = np.nonzero(in_extent)[0]
-        del in_extent, high_flat
+        chunk_rows = 512
+        for r0_chunk in range(0, mh, chunk_rows):
+            r1_chunk = min(r0_chunk + chunk_rows, mh)
 
-        gx_v = gx[pix_idx]
-        gy_v = gy[pix_idx]
-        del gx, gy
+            mx_chunk = mx[r0_chunk:r1_chunk, :]
+            my_chunk = my[r0_chunk:r1_chunk, :]
+            high_chunk = mush_high[r0_chunk:r1_chunk, :]
 
-        tile_c_v = gx_v // TILE_PX
-        tc_v = gx_v % TILE_PX
-        tile_r_v = gy_v // TILE_PX
-        tr_v = gy_v % TILE_PX
-        del gx_v, gy_v
+            gx_chunk = np.floor((mx_chunk - TL_X) / MATRIX_9_RES).astype(np.int32)
+            gy_chunk = np.floor((TL_Y - my_chunk) / MATRIX_9_RES).astype(np.int32)
 
-        in_tile = (
-            (tile_c_v >= VALID_C0) & (tile_c_v <= VALID_C1)
-            & (tile_r_v >= VALID_R0) & (tile_r_v <= VALID_R1)
-        )
-        pix_idx = pix_idx[in_tile]
-        tile_c_v = tile_c_v[in_tile]
-        tc_v = tc_v[in_tile]
-        tile_r_v = tile_r_v[in_tile]
-        tr_v = tr_v[in_tile]
-        del in_tile
+            in_extent = (
+                high_chunk
+                & (gx_chunk >= VALID_C0 * TILE_PX)
+                & (gx_chunk <= (VALID_C1 + 1) * TILE_PX - 1)
+                & (gy_chunk >= VALID_R0 * TILE_PX)
+                & (gy_chunk <= (VALID_R1 + 1) * TILE_PX - 1)
+            )
+            rows_c, cols_c = np.nonzero(in_extent)
+            del in_extent, high_chunk
 
-        mush_r_v = (pix_idx // mw).astype(np.int64)
-        mush_c_v = (pix_idx % mw).astype(np.int64)
+            if len(rows_c) == 0:
+                del mx_chunk, my_chunk, gx_chunk, gy_chunk, rows_c, cols_c
+                continue
 
-        # --- Group pixels by tile ---
-        key = tile_r_v.astype(np.int64) * 4096 + tile_c_v.astype(np.int64)
-        _, inverse = np.unique(key, return_inverse=True)
-        sort_idx = np.argsort(inverse, kind="stable")
-        inverse_sorted = inverse[sort_idx]
-        pix_sorted = pix_idx[sort_idx]
-        tile_r_sorted = tile_r_v[sort_idx]
-        tile_c_sorted = tile_c_v[sort_idx]
-        tc_sorted = tc_v[sort_idx]
-        tr_sorted = tr_v[sort_idx]
-        mush_r_sorted = mush_r_v[sort_idx]
-        mush_c_sorted = mush_c_v[sort_idx]
+            mush_r_v = (rows_c + r0_chunk).astype(np.int64)
+            mush_c_v = cols_c.astype(np.int64)
+            gx_v = gx_chunk[rows_c, cols_c]
+            gy_v = gy_chunk[rows_c, cols_c]
 
-        bounds = np.nonzero(np.diff(inverse_sorted) != 0)[0] + 1
-        starts = np.concatenate(([0], bounds))
-        ends = np.concatenate((bounds, [len(pix_sorted)]))
+            tile_c_v = gx_v // TILE_PX
+            tc_v = gx_v % TILE_PX
+            tile_r_v = gy_v // TILE_PX
+            tr_v = gy_v % TILE_PX
 
-        tile_tasks = []  # (col, row, start, end)
-        for s, e in zip(starts, ends):
-            if s < e:
-                tile_tasks.append(
-                    (int(tile_c_sorted[s]), int(tile_r_sorted[s]), int(s), int(e))
-                )
+            in_tile = (
+                (tile_c_v >= VALID_C0) & (tile_c_v <= VALID_C1)
+                & (tile_r_v >= VALID_R0) & (tile_r_v <= VALID_R1)
+            )
+            if not np.any(in_tile):
+                del mx_chunk, my_chunk, gx_chunk, gy_chunk
+                del mush_r_v, mush_c_v, gx_v, gy_v
+                del tile_c_v, tc_v, tile_r_v, tr_v, in_tile
+                continue
 
+            mush_r_v = mush_r_v[in_tile]
+            mush_c_v = mush_c_v[in_tile]
+            tile_c_v = tile_c_v[in_tile]
+            tc_v = tc_v[in_tile]
+            tile_r_v = tile_r_v[in_tile]
+            tr_v = tr_v[in_tile]
+            del in_tile
+
+            # Vectorized grouping within this chunk by tile key.
+            keys = tile_r_v.astype(np.int32) * TILE_KEY_STRIDE + tile_c_v.astype(np.int32)
+            sort_idx = np.argsort(keys, kind="stable")
+            keys_sorted = keys[sort_idx]
+            bounds = np.nonzero(np.diff(keys_sorted) != 0)[0] + 1
+            starts = np.concatenate(([0], bounds))
+            ends = np.concatenate((bounds, [len(keys_sorted)]))
+
+            for s, e in zip(starts, ends):
+                key = int(keys_sorted[s])
+                if key not in tile_pixel_chunks:
+                    tile_pixel_chunks[key] = []
+                tile_pixel_chunks[key].append((
+                    mush_r_v[sort_idx[s:e]],
+                    mush_c_v[sort_idx[s:e]],
+                    tc_v[sort_idx[s:e]],
+                    tr_v[sort_idx[s:e]],
+                ))
+
+            del mx_chunk, my_chunk, gx_chunk, gy_chunk
+            del mush_r_v, mush_c_v, gx_v, gy_v
+            del tile_c_v, tc_v, tile_r_v, tr_v
+            del keys, sort_idx, keys_sorted, bounds, starts, ends
+
+        # Full grids no longer needed after tile assignment.
+        del mx, my
+
+        # --- Build tile keys from grouped pixels ---
+        #
+        # Tiles are processed in spatial batches (BATCH_SIZE at a time) so that
+        # only one batch's pixel index arrays and age arrays are in memory at
+        # once. After each batch completes, its arrays are freed before the next
+        # batch starts, keeping peak RSS bounded regardless of total tile count.
+        tile_keys = list(tile_pixel_chunks.keys())
         log.info(
             "%d of %d planned tiles contain high-probability mushroom pixels",
-            len(tile_tasks),
+            len(tile_keys),
             ntiles,
         )
 
-        def _load_tile_age(c, r):
-            """Return (age_array_or_None, was_cached) for one tile."""
-            cached = load_cached_tile(c, r, cache_files)
-            if cached is not None:
-                return cached[0], True
-            arr, _, _ = download_tile_with_retries(c, r)
-            if arr is None:
-                return None, False
-            age_arr = nearest_class(arr, FOREST_COLORS)
-            return age_arr, False
-
-        def _run_phase(tasks, max_workers, start_processed):
-            """Process a batch of tile tasks; return per-phase counters."""
-            p = a = b = c = d = 0
-            if not tasks:
-                return p, a, b, c, d
-            with ThreadPoolExecutor(max_workers=max_workers) as ex:
-                futs = {
-                    ex.submit(_load_tile_age, cc, rr): (cc, rr, ss, ee)
-                    for (cc, rr, ss, ee) in tasks
-                }
-                for fut in as_completed(futs):
-                    cc, rr, ss, ee = futs[fut]
-                    age_arr, was_cached = fut.result()
-                    p += 1
-                    if p % 2000 == 0:
-                        _set_status(
-                            progress=5 + int(90 * (start_processed + p) / ntiles)
-                        )
-                    if was_cached:
-                        c += 1
-                    elif age_arr is not None:
-                        d += 1
-                    if age_arr is None:
-                        continue
-                    if is_blank_rgb(age_arr):
-                        b += 1
-                        continue
-                    ages = age_arr[tr_sorted[ss:ee], tc_sorted[ss:ee]]
-                    dst[mush_r_sorted[ss:ee], mush_c_sorted[ss:ee]] = ages
-                    a += len(ages)
-            return p, a, b, c, d
+        # mush_high only gates which pixels get processed; once tile_keys is
+        # built it is no longer needed (dst == a implies mush_high was true).
+        del mush_high
 
         # Split into cached vs to-download so pools can be sized differently.
-        cached_tasks = [t for t in tile_tasks if f"{t[0]}_{t[1]}.npy" in cache_files]
-        download_tasks = [t for t in tile_tasks if f"{t[0]}_{t[1]}.npy" not in cache_files]
+        cached_keys = [
+            k
+            for k in tile_keys
+            if f"{k % TILE_KEY_STRIDE}_{k // TILE_KEY_STRIDE}.npy" in cache_files
+        ]
+        download_keys = [
+            k
+            for k in tile_keys
+            if f"{k % TILE_KEY_STRIDE}_{k // TILE_KEY_STRIDE}.npy" not in cache_files
+        ]
 
-        # Phase 1: tiles already in cache (fast local reads, more workers).
-        max_workers_cache = min(32, (os.cpu_count() or 4) + 4)
-        p1, a1, b1, c1, d1 = _run_phase(cached_tasks, max_workers_cache, 0)
-        processed = p1
+        BATCH_SIZE = 32  # tiles processed concurrently per batch
 
-        # Phase 2: tiles to download from WMTS (network-bound, fewer workers).
-        p2, a2, b2, c2, d2 = _run_phase(download_tasks, 8, processed)
-        processed += p2
+        def _process_single_tile(key):
+            """Process one tile: load/download, classify, apply to dst.
 
-        applied = a1 + a2
-        blanked = b1 + b2
-        cached_count = c1 + c2
-        downloaded_count = d1 + d2
+            Returns (was_cached, applied_count, blanked).
+            All per-tile arrays are freed before returning.
+            """
+            tile_r = key // TILE_KEY_STRIDE
+            tile_c = key % TILE_KEY_STRIDE
+            chunks = tile_pixel_chunks[key]
+            mush_r_arr = np.concatenate([c[0] for c in chunks])
+            mush_c_arr = np.concatenate([c[1] for c in chunks])
+            tc_arr = np.concatenate([c[2] for c in chunks])
+            tr_arr = np.concatenate([c[3] for c in chunks])
+
+            cached = load_cached_tile(tile_c, tile_r, cache_files)
+            age_arr = None
+            was_cached = False
+            if cached is not None:
+                age_arr = cached[0]
+                was_cached = True
+            else:
+                arr, _, _ = download_tile_with_retries(tile_c, tile_r)
+                if arr is None:
+                    del mush_r_arr, mush_c_arr, tc_arr, tr_arr, chunks
+                    return False, 0, 0
+                age_arr = nearest_class(arr, FOREST_COLORS)
+                was_cached = False
+
+            if age_arr is None or is_blank_rgb(age_arr):
+                blanked = 1 if age_arr is not None else 0
+                del mush_r_arr, mush_c_arr, tc_arr, tr_arr, chunks, age_arr
+                return was_cached, 0, blanked
+
+            ages = age_arr[tr_arr, tc_arr]
+            dst[mush_r_arr, mush_c_arr] = ages
+
+            # Free per-tile memory immediately
+            applied = len(ages)
+            del mush_r_arr, mush_c_arr, tc_arr, tr_arr, chunks, age_arr, ages
+            return was_cached, applied, 0
+
+        def _process_batch(keys_batch, max_workers):
+            """Process a batch of tiles concurrently; return counters."""
+            c = d = a = b = 0
+            if not keys_batch:
+                return c, d, a, b
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futs = {ex.submit(_process_single_tile, k): k for k in keys_batch}
+                for fut in as_completed(futs):
+                    was_cached, applied, blanked = fut.result()
+                    if was_cached:
+                        c += 1
+                    else:
+                        d += 1
+                    a += applied
+                    b += blanked
+            return c, d, a, b
+
+        processed = 0
+        applied = 0
+        blanked = 0
+        cached_count = 0
+        downloaded_count = 0
+
+        # Phase 1: cached tiles in batches (fast local reads, more workers).
+        for i in range(0, len(cached_keys), BATCH_SIZE):
+            batch = cached_keys[i : i + BATCH_SIZE]
+            c, d, a, b = _process_batch(batch, min(BATCH_SIZE, 32))
+            cached_count += c
+            downloaded_count += d
+            applied += a
+            blanked += b
+            processed += len(batch)
+            if processed % 2000 == 0:
+                _set_status(progress=5 + int(90 * processed / ntiles))
+
+        # Phase 2: download tiles in batches (network-bound, fewer workers).
+        for i in range(0, len(download_keys), BATCH_SIZE):
+            batch = download_keys[i : i + BATCH_SIZE]
+            c, d, a, b = _process_batch(batch, min(BATCH_SIZE, 4))
+            cached_count += c
+            downloaded_count += d
+            applied += a
+            blanked += b
+            processed += len(batch)
+            if processed % 2000 == 0:
+                _set_status(progress=5 + int(90 * processed / ntiles))
+
+        # Free all grouped pixel data now that tiles are processed.
+        missing_count = len(tile_keys) - cached_count - downloaded_count - blanked
+        downloading_count = len(download_keys)
+        tile_pixel_chunks.clear()
+        del tile_pixel_chunks
+        del tile_keys, cached_keys, download_keys
+        gc.collect()
 
         log.info(
             "cached tiles: %d, downloaded: %d, missing/failed: %d, "
             "blank: %d, mushroom px assigned: %d",
             cached_count,
             downloaded_count,
-            len(tile_tasks) - cached_count - downloaded_count - blanked,
+            missing_count,
             blanked,
             applied,
         )
@@ -271,14 +357,14 @@ def run_build():
             progress=5,
             ntiles=ntiles,
             cached=cached_count,
-            downloading=len(download_tasks),
+            downloading=downloading_count,
         )
 
         # 5. Per forest age: polygonize intersection
         _set_status(message="polygonizing forest ages", progress=95)
         ages_meta = []
         for a in range(8):
-            mask = (dst == a) & mush_high
+            mask = (dst == a)  # implies mush_high (only written there in step 4)
             inter = np.where(mask, mush_class, 0).astype(np.uint8)
             feats = []
             for geom, val in shapes(inter, transform=mush_transform):
