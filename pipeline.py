@@ -284,8 +284,9 @@ def run_build():
             dst[mush_r_arr, mush_c_arr] = ages
 
             # Free per-tile memory immediately
+            applied = len(ages)
             del mush_r_arr, mush_c_arr, tc_arr, tr_arr, chunks, age_arr, ages
-            return was_cached, len(ages), 0
+            return was_cached, applied, 0
 
         def _process_batch(keys_batch, max_workers):
             """Process a batch of tiles concurrently; return counters."""
