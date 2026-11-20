@@ -75,20 +75,29 @@ def download_tile_with_retries(col, row, max_retries=3):
     return None, col, row
 
 
-def load_cached_tile(col, row):
+def load_cached_tile(col, row, cache_files=None):
     """Load a tile from cache if it exists.
 
     Returns (age_array, col, row) where age_array is a 256x256 uint8 forest-age
     array (NODATA where no data), or None if not cached.
+
+    `cache_files` is an optional set of basenames already present in
+    TILE_CACHE_DIR. When supplied it replaces per-file os.path.exists() stat
+    calls with an in-memory membership test, which is much faster when loading
+    many cached tiles at once.
     """
     npy_path = os.path.join(TILE_CACHE_DIR, f"{col}_{row}.npy")
-    if os.path.exists(npy_path):
+    npy_name = f"{col}_{row}.npy"
+    if npy_name in cache_files if cache_files is not None else os.path.exists(npy_path):
         try:
             arr = np.load(npy_path)
             log.info("cache hit: %d_%d (npy)", col, row)
             return arr, col, row
         except Exception:
-            os.remove(npy_path)
+            try:
+                os.remove(npy_path)  # corrupt cache file, re-download
+            except OSError:
+                pass  # already gone
     # Fallback: raw PNG cache (from older builds). Classify and promote to .npy.
     png_path = os.path.join(TILE_CACHE_DIR, f"{col}_{row}.png")
     if not os.path.exists(png_path):
