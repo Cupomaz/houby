@@ -1,5 +1,11 @@
 const MUSH_COLOR = { 3: "#86cb66", 4: "#219b51" };
 
+// Lesní vĕk dle indexu (odpovídá souborům age_<id>.geojson a forest_age_index v mushrooms.json)
+const FOREST_LABELS = {
+  0: "1–20 let", 1: "21–40 let", 2: "41–60 let", 3: "61–80 let",
+  4: "81–100 let", 5: "101–120 let", 6: "121–140 let", 7: "141 a více let",
+};
+
 const map = L.map("map", { zoomControl: true }).setView([49.75, 15.45], 7);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
@@ -9,12 +15,24 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const $ = (id) => document.getElementById(id);
 const metaEl = $("meta");
 const statusEl = $("status");
-const formEl = $("ageForm");
 const opSlider = $("opSlider");
 const opVal = $("opVal");
 
+const listView = $("mushroomListView");
+const detailView = $("mushroomDetailView");
+const mushListEl = $("mushList");
+const mushDetailEl = $("mushDetail");
+const mushAgeInfoEl = $("mushAgeInfo");
+const backBtn = $("backToList");
+
 let currentLayer = null;
 let currentAge = null;
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 function styleFor(feature) {
   const c = feature.properties && feature.properties.mushClass;
@@ -44,13 +62,23 @@ function setOpacity(v) {
   }
 }
 
-function showAge(age) {
+function removeLayer() {
+  if (currentLayer) {
+    map.removeLayer(currentLayer);
+    currentLayer = null;
+  }
+  currentAge = null;
+}
+
+/* Načte a zobrazí vrstvu pro daný věk lesa. label se zobrazí v informaci. */
+function showAgeLayer(age, label) {
   currentAge = age;
   if (currentLayer) {
     map.removeLayer(currentLayer);
     currentLayer = null;
   }
   statusEl.textContent = "Načítám…";
+  statusEl.classList.remove("empty");
   fetch(`/data/age_${age}.geojson`)
     .then((r) => {
       if (!r.ok) return { type: "FeatureCollection", features: [] };
@@ -63,11 +91,10 @@ function showAge(age) {
       }).addTo(map);
       const n = geojson.features.length;
       if (n === 0) {
-        statusEl.textContent = `Pro vĕk "${formEl.querySelector(`input[value="${age}"]`).nextSibling.textContent.trim()}" nebyly nalezeny žádné plochy (viz časová pečeť mapy hub).`;
+        statusEl.textContent = `Pro ${label || "věk " + age} nebyly nalezeny žádné plochy.`;
         statusEl.classList.add("empty");
       } else {
-        const lab = formEl.querySelector(`input[value="${age}"]`).nextSibling.textContent.trim();
-        statusEl.textContent = `Zobrazeno ${n} ploch pro vĕk "${lab}".`;
+        statusEl.textContent = `Zobrazeno ${n} ploch pro ${label || "věk " + age}.`;
         statusEl.classList.remove("empty");
       }
     })
@@ -78,34 +105,49 @@ function showAge(age) {
     });
 }
 
-function buildMenu(ages) {
-  formEl.innerHTML = "";
-  const none = document.createElement("label");
-  const rbNone = document.createElement("input");
-  rbNone.type = "radio"; rbNone.name = "age"; rbNone.value = "none";
-  rbNone.checked = true;
-  rbNone.onchange = () => {
-    if (currentLayer) { map.removeLayer(currentLayer); currentLayer = null; }
-    currentAge = null;
-    statusEl.textContent = "Žádná vrstva není vybrána.";
-    statusEl.classList.remove("empty");
-  };
-  none.appendChild(rbNone);
-  none.append(document.createTextNode("Žádná (základní mapa)"));
-  formEl.appendChild(none);
+function showMushroom(m) {
+  showAgeLayer(m.forest_age_index, m.name);
+  const ageLabel = FOREST_LABELS[m.forest_age_index] ?? `vĕk ${m.forest_age_index}`;
+  mushAgeInfoEl.textContent = `Na mapě se zobrazuje lesní vĕk: ${ageLabel}.`;
+  mushDetailEl.innerHTML = `
+    <img src="${escapeHtml(m.image_url)}" alt="${escapeHtml(m.name)}" class="mush-img" onerror="this.style.display='none'" />
+    <h3>${escapeHtml(m.name)}</h3>
+    <p><strong>Jedlost:</strong> ${escapeHtml(m.edibility)}</p>
+    <p>${escapeHtml(m.description)}</p>
+  `;
+  listView.style.display = "none";
+  detailView.style.display = "block";
+}
 
-  ages.forEach((a) => {
-    const lab = document.createElement("label");
-    const rb = document.createElement("input");
-    rb.type = "radio"; rb.name = "age"; rb.value = a.id;
-    rb.onchange = () => showAge(a.id);
-    lab.appendChild(rb);
-    lab.append(document.createTextNode(`${a.label} (${a.count} ploch)`));
-    formEl.appendChild(lab);
+function backToList() {
+  removeLayer();
+  statusEl.textContent = "Vyberte houbu v seznamu.";
+  statusEl.classList.remove("empty");
+  mushAgeInfoEl.textContent = "";
+  mushDetailEl.innerHTML = "";
+  listView.style.display = "block";
+  detailView.style.display = "none";
+}
+
+function buildMushroomMenu(mushrooms) {
+  mushListEl.innerHTML = "";
+  mushrooms.forEach((m) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "mush-card";
+    card.onclick = () => showMushroom(m);
+    card.innerHTML = `
+      <img src="${escapeHtml(m.image_url)}" alt="${escapeHtml(m.name)}" class="mush-card-img" onerror="this.style.display='none'" />
+      <div class="mush-card-body">
+        <div class="mush-card-name">${escapeHtml(m.name)}</div>
+      </div>
+    `;
+    mushListEl.appendChild(card);
   });
 }
 
 opSlider.addEventListener("input", (e) => setOpacity(e.target.value));
+backBtn.addEventListener("click", backToList);
 
 fetch("/api/meta")
   .then((r) => r.json())
@@ -113,11 +155,24 @@ fetch("/api/meta")
     const [w, s, e, n] = meta.mushBounds;
     metaEl.textContent = `Data hub: ${meta.timeLabel || "neznámo"}. WMTS matice ${meta.matrix} (JTSK:5514).`;
     map.fitBounds([[s, w], [n, e]], { padding: [40, 40] });
-    buildMenu(meta.ages);
-    statusEl.textContent = "Připraveno — vyberte vĕkovou třídu.";
+    statusEl.textContent = "Připraveno — vyberte houbu.";
   })
   .catch((err) => {
     statusEl.textContent = "Nepodařilo se načíst metadata.";
+    statusEl.classList.add("empty");
+    console.error(err);
+  });
+
+fetch("/static/mushrooms.json")
+  .then((r) => {
+    if (!r.ok) throw new Error("seznam hub není dostupný");
+    return r.json();
+  })
+  .then((mushrooms) => {
+    buildMushroomMenu(mushrooms);
+  })
+  .catch((err) => {
+    statusEl.textContent = "Nepodařilo se načíst seznam hub.";
     statusEl.classList.add("empty");
     console.error(err);
   });
