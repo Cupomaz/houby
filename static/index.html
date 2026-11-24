@@ -11,11 +11,22 @@
 <div id="map"></div>
 
 <nav class="panel">
-  <h3>Lesní vĕk (průnik s nejvyšším/2. nejvyšším výskytem hub)</h3>
+  <h3>Seznam hub</h3>
   <p id="meta"></p>
   <div id="status" class="hint">Načítejte data…</div>
-  <form id="ageForm" class="age-menu">
-  </form>
+
+  <!-- Seznam hub (výchozí pohled) -->
+  <div id="mushroomListView" class="mush-view">
+    <div class="mush-list" id="mushList"></div>
+  </div>
+
+  <!-- Detail konkrétní huby -->
+  <div id="mushroomDetailView" class="mush-view" style="display:none;">
+    <button type="button" id="backToList" class="back-btn">← Zpět na seznam hub</button>
+    <div class="mush-detail" id="mushDetail"></div>
+    <p id="mushAgeInfo" class="hint"></p>
+  </div>
+
   <div class="opacity">
     <label>Průhlednost vrstvy <span id="opVal">100</span>%</label>
     <input type="range" id="opSlider" min="0" max="100" value="100" />
@@ -25,7 +36,7 @@
     <div><span class="swatch" style="background:#219b51"></span> nejvyšší (třída 4)</div>
     <div><span class="swatch" style="background:#86cb66"></span> 2. nejvyšší (třída 3)</div>
   </div>
-  <p class="hint">Vyberte vĕkovou třídu lesa v menu. Zobrazeny jsou pouze plochy, kde souběžnĕ platí nejvyšší/2. nejvyšší výskyt hub.</p>
+  <p class="hint">Klikněte na houbu v seznamu. Na mapě se zobrazí plochy lesního vĕku, ke kterému houba patří. Kliknutím na „Zpět“ se seznam vrátí a vrstva zmizí.</p>
 </nav>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

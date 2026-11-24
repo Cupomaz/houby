@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Hřib smrkový",
+    "edibility": "edible",
+    "description": "Nejvyhledávanější houba u nás, lidově pravák nebo smrkáč. Roste od června do října, nejvíc v srpnu a září, ve smrčinách a smíšených lesích, ale i pod borovicemi, buky a duby. Má bílou dužninu a hnědý klobouk.",
+    "image_url": "images/hrib-smrkovy.jpg",
+    "forest_age_index": 2
+  },
+  {
+    "name": "Křemenáč",
+    "edibility": "edible",
+    "description": "Roste od června do října pod břízami, osikami a duby, často na okrajích lesů, pasekách a v mladších porostech. Má oranžovo-červený klobouk a šupinatý třen, dužnina po rozříznutí tmavne.",
+    "image_url": "images/kremenac.jpg",
+    "forest_age_index": 1
+  },
+  {
+    "name": "Kozák březový",
+    "edibility": "edible",
+    "description": "Hojná houba, která roste od června do října pod břízami, hlavně ve vlhčích březinách a na okrajích lesů. Má hnědý klobouk a štíhlý třen s tmavými šupinkami. Doporučuje se sbírat mladé plodnice.",
+    "image_url": "images/kozak-brezovy.jpg",
+    "forest_age_index": 0
+  },
+  {
+    "name": "Hřib hnědý",
+    "edibility": "edible",
+    "description": "Suchohřib, hojná podzimní houba (srpen až listopad) na kyselých půdách ve smrkových a borových lesích, ale i pod duby a buky. Má hnědý klobouk a žlutý spodek, který po dotyku modrá. Pozor na záměnu s hořkým žlučníkem.",
+    "image_url": "images/hrib-hnedy.jpg",
+    "forest_age_index": 2
+  },
+  {
+    "name": "Hřib žlutomasý (babka)",
+    "edibility": "edible",
+    "description": "Velmi hojná houba od července do října, roste v listnatých i jehličnatých lesích, u cest a na okrajích lesů. Je oblíbená, když jiné houby nerostou, ale je náchylná na červivost a plíseň, proto sbírat jen mladé plodnice.",
+    "image_url": "images/hrib-zlutomasy-babka.jpg",
+    "forest_age_index": 1
+  },
+  {
+    "name": "Liška obecná",
+    "edibility": "edible",
+    "description": "Žlutá trubkovitá houba, která roste od června do října (nejvíc v červenci až září) ve vlhčích mechových lesích, hlavně smrkových a bukových. Je zřídka červivá. Sušením hořkne, hodí se čerstvá.",
+    "image_url": "images/liska-obecna.jpg",
+    "forest_age_index": 3
+  },
+  {
+    "name": "Bedla vysoká",
+    "edibility": "edible",
+    "description": "Velká houba s kloboukem jako deštník a hadovitým vzorem na třeni. Roste od července do října na okrajích lesů, na pasekách, na loukách a v řídkých světlých lesích. Jedí se hlavně klobouky.",
+    "image_url": "images/bedla-vysoka.jpg",
+    "forest_age_index": 0
+  },
+  {
+    "name": "Václavka obecná",
+    "edibility": "edible",
+    "description": "Roste ve velkých trsech na pařezech, kmenech a kořenech listnatých i jehličnatých stromů, hlavně od září do listopadu. Jedlá je pouze po důkladné tepelné úpravě, syrová nebo nedovařená způsobuje potíže.",
+    "image_url": "images/vaclavka-obecna.jpg",
+    "forest_age_index": 3
+  },
+  {
+    "name": "Klouzek obecný",
+    "edibility": "edible",
+    "description": "Roste od června do listopadu pod borovicemi, hlavně v mladých borových porostech a na písčitých půdách. Má slizký hnědý klobouk, před přípravou je potřeba stáhnout slizkou kůžičku.",
+    "image_url": "images/klouzek-obecny.jpg",
+    "forest_age_index": 0
+  },
+  {
+    "name": "Hřib žlučník",
+    "edibility": "non edible",
+    "description": "Nejčastější nebezpečný dvojník hřibu smrkového. Roste od července do října na kyselých půdách v jehličnatých lesích, hlavně pod smrky a borovicemi. Má hořkou chuť, která zkazí celé jídlo, rourky jsou časem narůžovělé a třen má tmavou síťku.",
+    "image_url": "images/hrib-zlucnik.jpg",
+    "forest_age_index": 2
+  }
+]
