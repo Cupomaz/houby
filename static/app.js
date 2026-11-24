@@ -110,7 +110,7 @@ function showMushroom(m) {
   const ageLabel = FOREST_LABELS[m.forest_age_index] ?? `vĕk ${m.forest_age_index}`;
   mushAgeInfoEl.textContent = `Na mapě se zobrazuje lesní vĕk: ${ageLabel}.`;
   mushDetailEl.innerHTML = `
-    <img src="${escapeHtml(m.image_url)}" alt="${escapeHtml(m.name)}" class="mush-img" onerror="this.style.display='none'" />
+    <img src="/static/${escapeHtml(m.image_url)}" alt="${escapeHtml(m.name)}" class="mush-img" onerror="this.style.display='none'" />
     <h3>${escapeHtml(m.name)}</h3>
     <p><strong>Jedlost:</strong> ${escapeHtml(m.edibility)}</p>
     <p>${escapeHtml(m.description)}</p>
@@ -137,7 +137,7 @@ function buildMushroomMenu(mushrooms) {
     card.className = "mush-card";
     card.onclick = () => showMushroom(m);
     card.innerHTML = `
-      <img src="${escapeHtml(m.image_url)}" alt="${escapeHtml(m.name)}" class="mush-card-img" onerror="this.style.display='none'" />
+      <img src="/static/${escapeHtml(m.image_url)}" alt="${escapeHtml(m.name)}" class="mush-card-img" onerror="this.style.display='none'" />
       <div class="mush-card-body">
         <div class="mush-card-name">${escapeHtml(m.name)}</div>
       </div>
